@@ -89,7 +89,7 @@ class Client:
             total += len(data)
             # 进度条
             percentage = round(total / file_size * 100)
-            print("\r进度: {}%: ".format(percentage), "▓" * (percentage // 2), end='')
+            print("\r进度: {}%: ".format(percentage), "7" * (percentage // 2), end='')
             sys.stdout.flush()
         print('')
         f.close()

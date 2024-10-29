@@ -190,3 +190,4 @@ if __name__ == '__main__':
     netdistserver = NetDiskServer("", 8080)
     netdistserver.tcp_init()
     netdistserver.start()
+    print('test')
