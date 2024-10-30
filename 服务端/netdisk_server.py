@@ -9,13 +9,16 @@
 import socket
 import struct
 import os
+import select
 
 
 class NetDiskServer:
     def __init__(self, ip, port):
         self.ip = ip
         self.port = port
-        self.server_sock = None
+        self.server_socket = None
+        # 存放用户连接socket的实例化user对象
+        self.client_socket_list = []
 
     def tcp_init(self):
         """
@@ -23,31 +26,55 @@ class NetDiskServer:
         :return: None
         """
         try:
-            self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            # 使端口快速重用
-            self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.server_sock.bind((self.ip, self.port))
-            self.server_sock.listen(125)
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # 确保端口复用
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.server_socket.bind((self.ip, self.port))
+            self.server_socket.listen(125)
         except Exception as msg:
-            print(msg)
+            print('1', msg)
 
     def tcp_close(self):
         """
         关闭server_sock
         :return:
         """
-        self.server_sock.close()
+        self.server_socket.close()
 
     def start(self):
         """
         主流程:accept连接，然后创建User对象，调用user.command_processing()接收处理命令
         :return: None
         """
-        new_client, client_address = self.server_sock.accept()
-        print(f"用户连接{client_address}")
-        user = User(new_client, client_address)
-        # 接收处理客户端发来的命令
-        user.command_processing()
+        # 创建epoll
+        epoll = select.epoll()
+        # 监控server_socket
+        epoll.register(self.server_socket.fileno(), select.EPOLLIN)
+
+        while True:
+            # 等待epoll返回有数据的缓冲区的列表
+            epoll_list = epoll.poll()
+            # 取出列表
+            for fd, _ in epoll_list:
+                # 如果是server_scoket则表示有用户连接或者用户请求文件操作
+                if fd == self.server_socket.fileno():
+                    new_client, client_address = self.server_socket.accept()
+                    print(f"用户连接{client_address}")
+                    user = User(new_client, client_address)
+                    # 把新用户的实例化user放入列表并监控
+                    self.client_socket_list.append(user)
+                    epoll.register(user.client_socket.fileno(), select.EPOLLIN)
+                else:
+                    # 如果是某个用户则处理命令
+                    for user in self.client_socket_list:
+                        if user.client_socket.fileno() == fd:
+                            ret = user.command_processing()
+                            # 如果用户断开，则区列表一处，并且注销
+                            if not ret:
+                                print(len(self.client_socket_list))
+                                print(f'{user.client_address}断开')
+                                self.client_socket_list.remove(user)
+                                epoll.unregister(user.client_socket.fileno())
 
 
 class User:
@@ -63,42 +90,46 @@ class User:
         # 储存用户的路径
         self.path = os.getcwd()
 
-    def command_processing(self):
+    def command_processing(self) -> bool:
         """
         接收用户命令，调用对应函数进行处理
-        :return:
+        :return:返回用户是否断开
         """
-        # 循环接收用户命令
-        while True:
-            command = self.recv_data().decode('utf-8')
-            print(f"接收到命令{command}来自{self.client_address}")
-            if command[:2] == 'ls':
-                self.ls_processing(command)
-            elif command[:2] == 'cd':
-                pass
-            elif command[:3] == 'pwd':
-                self.pwd_processing(command)
-            elif command[:2] == 'rm':
-                pass
-            elif command[:4] == 'puts':
-                pass
-            elif command[:4] == 'gets':
-                print('gets')
-                self.gets_processing(self.client_socket, command)
-            elif command[:5] == 'mkdir':
-                pass
-            elif command[:5] == 'rmdir':
-                pass
-            else:
-                print("wrong command:", command)
+        command_bytes = self.recv_data()
+        # 如果是空数据则用户断开，返回false
+        if not command_bytes:
+            return False
+        command = command_bytes.decode('utf-8')
+        print(f"接收到命令{command}来自{self.client_address}")
+        if command[:2] == 'ls':
+            self.ls_processing(command)
+        elif command[:2] == 'cd':
+            pass
+        elif command[:3] == 'pwd':
+            self.pwd_processing(command)
+        elif command[:2] == 'rm':
+            pass
+        elif command[:4] == 'puts':
+            pass
+        elif command[:4] == 'gets':
+            print('gets')
+            self.gets_processing(self.client_socket, command)
+        elif command[:5] == 'mkdir':
+            pass
+        elif command[:5] == 'rmdir':
+            pass
+        else:
+            print("wrong command:", command)
+        # 正常处理，返回true
+        return True
 
     def ls_processing(self, command):
-        ls_data = ''
+        ls_data = str(self.client_address) + ''
         list_file = os.listdir(self.path)
         for file_name in list_file:
             # 拼接当前目录文件名和文件大小
             # todo 待完善
-            ls_data += file_name + '\t\t\t\t' + str(os.path.getsize(self.path + '\\' + file_name)) + '\n'
+            ls_data += file_name + '\t\t\t\t' + str(os.path.getsize(self.path + '/' + file_name)) + '\n'
         # 发送给客户端
         self.send_data(ls_data.encode('utf-8'))
 
@@ -187,7 +218,6 @@ class User:
 
 
 if __name__ == '__main__':
-    netdistserver = NetDiskServer("", 8080)
+    netdistserver = NetDiskServer("", 2333)
     netdistserver.tcp_init()
     netdistserver.start()
-    print('test')

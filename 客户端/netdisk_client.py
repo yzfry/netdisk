@@ -89,7 +89,7 @@ class Client:
             total += len(data)
             # 进度条
             percentage = round(total / file_size * 100)
-            print("\r进度: {}%: ".format(percentage), "7" * (percentage // 2), end='')
+            print("\r进度: {}%: ".format(percentage), '[', "-" * (percentage // 2), ']', end='')
             sys.stdout.flush()
         print('')
         f.close()
@@ -129,6 +129,6 @@ class Client:
         self.client_socket.close()
 
 if __name__ == '__main__':
-    client = Client("192.168.31.118", 8080)
+    client = Client("192.168.232.142", 2333)
     client.connect()
     client.send_command()
