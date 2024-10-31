@@ -10,11 +10,30 @@ import socket
 import struct
 import sys
 
+# 状态代码
+SUCCESS = 1
+ERROR = 0
+REGISTER = 2
+LOGIN = 3
+REQUEST = 4
+REQUEST_FILE = 5
+
+
+def ask_status(ask_socket:socket.socket, status:int):
+    ask_socket.sendall(struct.pack('>I', status))
+
+def res_status(res_socket:socket.socket):
+    status_bytes = res_socket.recv(4)
+    return struct.unpack('>I', status_bytes)[0]
+
+
 class Client:
     def __init__(self, ip, port):
         self.ip = ip
         self.port = port
         self.client_socket = None
+        # 储存接收到的token
+        self.token = None
 
     def connect(self):
         """
@@ -23,6 +42,27 @@ class Client:
         """
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_socket.connect((self.ip, self.port))
+
+    def login(self):
+        choose = int(input('登录0 注册1 >'))
+        if choose == 0:
+            # 告诉服务端要登录
+            ask_status(self.client_socket, LOGIN)
+            # 用户输入账号和密码
+            username = str(input('[登陆]username >'))
+            password = str(input('[注册]password >]'))
+            # 发送用户名和密码到服务端
+            self.send_data(username.encode('utf-8'))
+            self.send_data(password.encode('utf-8'))
+
+            if res_status(self.client_socket) == SUCCESS:
+                print('[登录成功]')
+            else:
+                print('[登录失败]')
+                self.user_close()
+
+        elif choose == 1:
+            pass
 
     def send_command(self):
         while True:
@@ -84,6 +124,7 @@ class Client:
             # 这里有个问题就是recv(1024)即使服务端发送的1024字节的数据还没到全，只到了600字节也会返回600字节，因此需要循环接收
             data = new_client_file.recv(1024)
             if not data:
+                # 如果没有recv到数据，说明服务端断开
                 break
             f.write(data)
             total += len(data)
@@ -131,4 +172,5 @@ class Client:
 if __name__ == '__main__':
     client = Client("192.168.232.142", 2333)
     client.connect()
+    client.login()
     client.send_command()
